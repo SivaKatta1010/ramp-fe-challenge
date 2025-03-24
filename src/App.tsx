@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState} from "react"
 import { InputSelect } from "./components/InputSelect"
 import { Instructions } from "./components/Instructions"
 import { Transactions } from "./components/Transactions"
@@ -12,6 +12,7 @@ export function App() {
   const { data: employees, loading: employeesLoading, fetchAll, invalidateData: invalidateEmployees } = useEmployees()
   const { data: paginatedTransactions, loading: transactionsLoading, fetchAll: fetchAllTransactions, invalidateData: invalidateTransactions } = usePaginatedTransactions()
   const { data: transactionsByEmployee, fetchById } = useTransactionsByEmployee()
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("")
 
   const transactions = useMemo(
     () => paginatedTransactions?.data ?? transactionsByEmployee ?? null,
@@ -22,9 +23,11 @@ export function App() {
     if (!employees) {
       await fetchAll()
     }
-    invalidateTransactions()
-    await fetchAllTransactions()
-  }, [employees, fetchAll, fetchAllTransactions, invalidateTransactions])
+    setSelectedEmployeeId("") 
+    invalidateTransactions() 
+    await fetchAllTransactions() 
+  }, [invalidateTransactions, fetchAllTransactions])
+  
 
   const loadTransactionsByEmployee = useCallback(async (employeeId: string) => {
     invalidateTransactions()
@@ -62,10 +65,14 @@ export function App() {
           })}
           onChange={async (newValue) => {
             if (newValue === null) return
-            newValue.id !== ""
-              ? await loadTransactionsByEmployee(newValue.id)
-              : await loadAllTransactions()
-          }}
+          
+            if (newValue.id !== "") {
+              setSelectedEmployeeId(newValue.id)
+              await loadTransactionsByEmployee(newValue.id)
+            } else {
+              await loadAllTransactions()
+            }
+          }}          
         />
 
         <div className="RampBreak--l" />
@@ -73,7 +80,7 @@ export function App() {
         <div className="RampGrid">
           <Transactions transactions={transactions} />
           
-          {!transactionsByEmployee && paginatedTransactions?.nextPage != null && (
+          {!selectedEmployeeId && paginatedTransactions?.nextPage != null && (
             <button
               className="RampButton"
               onClick={async () => {
