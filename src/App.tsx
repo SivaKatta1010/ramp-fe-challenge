@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo } from "react"
 import { InputSelect } from "./components/InputSelect"
 import { Instructions } from "./components/Instructions"
 import { Transactions } from "./components/Transactions"
@@ -9,10 +9,9 @@ import { EMPTY_EMPLOYEE } from "./utils/constants"
 import { Employee } from "./utils/types"
 
 export function App() {
-  const { data: employees, ...employeeUtils } = useEmployees()
-  const { data: paginatedTransactions, ...paginatedTransactionsUtils } = usePaginatedTransactions()
-  const { data: transactionsByEmployee, ...transactionsByEmployeeUtils } = useTransactionsByEmployee()
-  const [isLoading, setIsLoading] = useState(false)
+  const { data: employees, loading: employeesLoading, fetchAll, invalidateData: invalidateEmployees } = useEmployees()
+  const { data: paginatedTransactions, loading: transactionsLoading, fetchAll: fetchAllTransactions, invalidateData: invalidateTransactions } = usePaginatedTransactions()
+  const { data: transactionsByEmployee, fetchById } = useTransactionsByEmployee()
 
   const transactions = useMemo(
     () => paginatedTransactions?.data ?? transactionsByEmployee ?? null,
@@ -20,28 +19,29 @@ export function App() {
   )
 
   const loadAllTransactions = useCallback(async () => {
-    setIsLoading(true)
-    transactionsByEmployeeUtils.invalidateData()
+    if (!employees) {
+      await fetchAll()
+    }
+    invalidateTransactions()
+    await fetchAllTransactions()
+  }, [employees, fetchAll, fetchAllTransactions, invalidateTransactions])
 
-    await employeeUtils.fetchAll()
-    await paginatedTransactionsUtils.fetchAll()
+  const loadTransactionsByEmployee = useCallback(async (employeeId: string) => {
+    invalidateTransactions()
+    await fetchById(employeeId)
+  }, [invalidateTransactions, fetchById])
 
-    setIsLoading(false)
-  }, [employeeUtils, paginatedTransactionsUtils, transactionsByEmployeeUtils])
-
-  const loadTransactionsByEmployee = useCallback(
-    async (employeeId: string) => {
-      paginatedTransactionsUtils.invalidateData()
-      await transactionsByEmployeeUtils.fetchById(employeeId)
-    },
-    [paginatedTransactionsUtils, transactionsByEmployeeUtils]
-  )
+  const loadMoreTransactions = useCallback(async () => {
+    if (paginatedTransactions?.nextPage != null) {
+      await fetchAllTransactions()
+    }
+  }, [paginatedTransactions, fetchAllTransactions])
 
   useEffect(() => {
-    if (employees === null && !employeeUtils.loading) {
+    if (employees === null && !employeesLoading) {
       loadAllTransactions()
     }
-  }, [employeeUtils.loading, employees, loadAllTransactions])
+  }, [employees, employeesLoading, loadAllTransactions])
 
   return (
     <Fragment>
@@ -51,9 +51,9 @@ export function App() {
         <hr className="RampBreak--l" />
 
         <InputSelect<Employee>
-          isLoading={isLoading}
+          isLoading={employeesLoading}
           defaultValue={EMPTY_EMPLOYEE}
-          items={employees === null ? [] : [EMPTY_EMPLOYEE, ...employees]}
+          items={employees ? [EMPTY_EMPLOYEE, ...employees] : []}
           label="Filter by employee"
           loadingLabel="Loading employees"
           parseItem={(item) => ({
@@ -61,11 +61,10 @@ export function App() {
             label: `${item.firstName} ${item.lastName}`,
           })}
           onChange={async (newValue) => {
-            if (newValue === null) {
-              return
-            }
-
-            await loadTransactionsByEmployee(newValue.id)
+            if (newValue === null) return
+            newValue.id !== ""
+              ? await loadTransactionsByEmployee(newValue.id)
+              : await loadAllTransactions()
           }}
         />
 
@@ -73,13 +72,12 @@ export function App() {
 
         <div className="RampGrid">
           <Transactions transactions={transactions} />
-
-          {transactions !== null && (
+          
+          {!transactionsByEmployee && paginatedTransactions?.nextPage != null && (
             <button
               className="RampButton"
-              disabled={paginatedTransactionsUtils.loading}
               onClick={async () => {
-                await loadAllTransactions()
+                await loadMoreTransactions()
               }}
             >
               View More
